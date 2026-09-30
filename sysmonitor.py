@@ -163,6 +163,10 @@ class MonitorApp(tk.Tk):
         self.font_mono = tkfont.Font(family="Monospace", size=10)
         self.font_small = tkfont.Font(family="Monospace", size=9)
 
+        self.cpu_total_text = tk.StringVar(value="总体 --%")
+        self.mem_text = tk.StringVar(value="--")
+        self.swap_text = tk.StringVar(value="")
+
         container = tk.Frame(self, bg=BG, padx=16, pady=12)
         container.pack()
 
@@ -175,7 +179,10 @@ class MonitorApp(tk.Tk):
 
         # ---- CPU ----
         self.section(container, "CPU")
-        self.cpu_total_text = tk.StringVar(value="总体 --%")
+        tk.Label(
+            container, textvariable=self.cpu_total_text, font=self.font_mono,
+            bg=BG, fg=FG, anchor="w",
+        ).pack(fill="x")
         self.cpu_total_canvas = tk.Canvas(
             container, width=self.bar_width, height=self.bar_height,
             bg=BG, highlightthickness=0,
@@ -189,13 +196,19 @@ class MonitorApp(tk.Tk):
 
         # ---- 内存 ----
         self.section(container, "内存")
-        self.mem_text = tk.StringVar(value="--")
+        tk.Label(
+            container, textvariable=self.mem_text, font=self.font_mono,
+            bg=BG, fg=FG, anchor="w",
+        ).pack(fill="x")
         self.mem_canvas = tk.Canvas(
             container, width=self.bar_width, height=self.bar_height,
             bg=BG, highlightthickness=0,
         )
         self.mem_canvas.pack(pady=(2, 4))
-        self.swap_text = tk.StringVar(value="")
+        tk.Label(
+            container, textvariable=self.swap_text, font=self.font_mono,
+            bg=BG, fg=FG, anchor="w",
+        ).pack(fill="x")
         self.swap_canvas = tk.Canvas(
             container, width=self.bar_width, height=self.bar_height,
             bg=BG, highlightthickness=0,
