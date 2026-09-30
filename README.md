@@ -12,18 +12,31 @@ Ubuntu 桌面实时监控工具（GUI），零第三方依赖（仅 Python 标�
 ## 使用
 
 ```bash
-# 默认 1 秒刷新
-./sysmonitor.py
+# 方式一：独立可执行文件（已打包，无需安装 Python/Tkinter，双击即可）
+./dist/sysmonitor
 
-# 指定刷新间隔（秒）
-./sysmonitor.py -i 0.5
+# 方式二：源码运行
+./sysmonitor.py          # 默认 1 秒刷新
+./sysmonitor.py -i 0.5   # 指定刷新间隔（秒）
 ```
+
+## 打包独立应用
+
+使用 PyInstaller 打包为单文件可执行程序：
+
+```bash
+python3 -m pip install --user pyinstaller
+~/.local/bin/pyinstaller --onefile --windowed --name sysmonitor \
+    --distpath dist --workpath build --specpath build sysmonitor.py
+```
+
+产物：`dist/sysmonitor`（约 11MB），拷贝到任意同架构 Ubuntu 机器均可直接运行。
 
 ## 双击打开
 
 1. 确保文件有执行权限：`chmod +x sysmonitor.py`
 2. 文件管理器（Nautilus）双击 `sysmonitor.py` → 选择「运行」（Run）
-3. 或安装桌面启动器（推荐，出现在应用菜单中）：
+3. 或安装桌面启动器（推荐，指向已打包的 `dist/sysmonitor`，出现在应用菜单中）：
 
 ```bash
 mkdir -p ~/.local/share/applications
