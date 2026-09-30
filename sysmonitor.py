@@ -179,7 +179,7 @@ class MonitorApp(tk.Tk):
 
         # ---- 刷新间隔（滑动选择，1-30 秒） ----
         interval_row = tk.Frame(container, bg=BG)
-        interval_row.pack(anchor="e", pady=(0, 10))
+        interval_row.pack(anchor="w", pady=(0, 10))
         tk.Label(
             interval_row, text="刷新间隔", font=self.font_normal,
             bg=BG, fg=SUBTEXT,
