@@ -267,7 +267,16 @@ class MonitorApp(tk.Tk):
             return
         val = max(1, min(30, val))
         self.interval = val * 1000
-        self.interval_value.config(text=f"{val} 秒")
+        if hasattr(self, "interval_value"):
+            self.interval_value.config(text=f"{val} 秒")
+        # 立即生效：取消挂起的定时器，尽快按新间隔刷新
+        after_id = getattr(self, "_after_id", None)
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+            self._after_id = self.after(50, self.update_loop)
 
     def draw_bar(self, canvas, pct, color, width=None):
         """在 Canvas 上绘制进度条"""
@@ -401,7 +410,7 @@ class MonitorApp(tk.Tk):
             self.prev_net = cur_net
             self.prev_time = cur_time
 
-        self.after(int(self.interval), self.update_loop)
+        self._after_id = self.after(int(self.interval), self.update_loop)
 
 
 # ---------------------------------------------------------------
