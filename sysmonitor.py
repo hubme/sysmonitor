@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sysmonitor —— Ubuntu 终端实时监控工具
+sysmonitor —— Ubuntu 桌面实时监控工具（GUI 版）
 
 实时显示：
-  - CPU 总体使用率及每核心使用率（柱状图）
+  - CPU 总体使用率及每核心使用率（进度条）
   - 内存 / Swap 使用情况
   - 上传、下载网速（含累计流量）
+  - 系统运行时长
 
-零第三方依赖，直接读取 /proc 虚拟文件系统。
+零第三方依赖（仅标准库 Tkinter + /proc），双击文件即可打开。
 """
 
 import argparse
-import curses
-import os
-
+import subprocess
 import sys
 import time
+import tkinter as tk
+from tkinter import font as tkfont
 
 
 # ---------------------------------------------------------------
-# 数据采集层
+# 数据采集层（读取 /proc）
 # ---------------------------------------------------------------
 
 def read_cpu_times():
@@ -30,9 +31,7 @@ def read_cpu_times():
         for line in f:
             if line.startswith("cpu"):
                 parts = line.split()
-                name = parts[0]
-                values = [int(x) for x in parts[1:]]
-                cpus[name] = values
+                cpus[parts[0]] = [int(x) for x in parts[1:]]
     total = cpus.get("cpu", [])
     per_core = [cpus[k] for k in sorted(
         (k for k in cpus if k != "cpu"),
@@ -59,14 +58,13 @@ def read_mem():
     with open("/proc/meminfo") as f:
         for line in f:
             key, val = line.split(":", 1)
-            num = val.strip().split()[0]
-            info[key] = int(num) / 1024.0  # kB -> MB
+            info[key] = float(val.strip().split()[0]) / 1024.0  # kB -> MB
 
     mem_total = info.get("MemTotal", 0.0)
     mem_avail = info.get("MemAvailable", info.get("MemFree", 0.0))
-    mem_used = mem_total - mem_avail
     swap_total = info.get("SwapTotal", 0.0)
     swap_free = info.get("SwapFree", 0.0)
+    mem_used = mem_total - mem_avail
     swap_used = swap_total - swap_free
     return {
         "mem_total": mem_total,
@@ -89,104 +87,10 @@ def read_net():
         iface, data = line.split(":", 1)
         iface = iface.strip()
         fields = data.split()
-        rx, tx = int(fields[0]), int(fields[8])
         if iface == "lo":
             continue
-        stats[iface] = (rx, tx)
+        stats[iface] = (int(fields[0]), int(fields[8]))
     return stats
-
-
-def format_speed(bps):
-    """字节/秒 -> 人类可读"""
-    if bps < 1024:
-        return f"{bps:6.0f} B/s"
-    for unit in ("KB/s", "MB/s", "GB/s"):
-        bps /= 1024.0
-        if bps < 1024:
-            return f"{bps:6.2f} {unit}"
-    return f"{bps:6.2f} TB/s"
-
-
-def format_bytes(b):
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if b < 1024:
-            return f"{b:.1f} {unit}"
-        b /= 1024.0
-    return f"{b:.1f} PB"
-
-
-def bar(pct, width, filled="#", empty="-"):
-    n = int(pct / 100.0 * width)
-    n = max(0, min(width, n))
-    return filled * n + empty * (width - n)
-
-
-# ---------------------------------------------------------------
-# 界面层
-# ---------------------------------------------------------------
-
-def draw(stdscr, snapshot):
-    h, w = stdscr.getmaxyx()
-    row = 0
-
-    def put(y, x, text, attr=0):
-        if y < h - 1 and x < w - 1:
-            try:
-                stdscr.addnstr(y, x, text, w - x - 1, attr)
-            except curses.error:
-                pass
-
-    title = f" sysmonitor  |  {time.strftime('%Y-%m-%d %H:%M:%S')}  |  {snapshot['uptime']} "
-    put(row, 0, title.ljust(w)[:w], curses.A_REVERSE)
-    row += 2
-
-    # ---- CPU ----
-    put(row, 2, "CPU", curses.A_BOLD)
-    row += 1
-    total_pct = snapshot["cpu_total"]
-    put(row, 4, f"总体: {total_pct:5.1f}%  [{bar(total_pct, max(10, w - 30))}]")
-    row += 2
-
-    # 每核心，两列排布
-    core_w = max(10, (w - 20) // 2)
-    for i, pct in enumerate(snapshot["cpu_cores"]):
-        col = 4 if i % 2 == 0 else 4 + core_w
-        put(row, col, f"核心{i:02d} {pct:5.1f}% [{bar(pct, core_w - 20)}]")
-        if i % 2 == 1:
-            row += 1
-    row += 2
-
-    # ---- 内存 ----
-    mem = snapshot["mem"]
-    put(row, 2, "内存", curses.A_BOLD)
-    row += 1
-    put(row, 4, (
-        f"已用 {mem['mem_used']:8.0f} MB / {mem['mem_total']:8.0f} MB "
-        f"[{mem['mem_pct']:5.1f}%] [{bar(mem['mem_pct'], max(10, w - 60))}]"
-    ))
-    row += 1
-    if mem["swap_total"] > 0:
-        put(row, 4, (
-            f"Swap {mem['swap_used']:8.0f} MB / {mem['swap_total']:8.0f} MB "
-            f"[{mem['swap_pct']:5.1f}%] [{bar(mem['swap_pct'], max(10, w - 60))}]"
-        ))
-        row += 1
-    row += 1
-
-    # ---- 网络 ----
-    put(row, 2, "网络", curses.A_BOLD)
-    row += 1
-    if not snapshot["net"]:
-        put(row, 4, "未检测到网卡")
-        row += 1
-    for iface, info in snapshot["net"].items():
-        color = curses.color_pair(3)
-        put(row, 4, f"{iface[:10]:<10} ↓下载 {format_speed(info['rx_speed']):>12}   ↑上传 {format_speed(info['tx_speed']):>12}", color)
-        put(row + 1, 4, f"{'':<10} 累计收 {format_bytes(info['rx_total']):>12}   累计发 {format_bytes(info['tx_total']):>12}")
-        row += 2
-    row += 1
-
-    put(h - 1, 0, " q: 退出  +/-: 调整刷新间隔  ".ljust(w)[:w], curses.A_REVERSE)
 
 
 def read_uptime():
@@ -197,79 +101,270 @@ def read_uptime():
         return ""
     days, rem = divmod(int(secs), 86400)
     hours, rem = divmod(rem, 3600)
-    minutes = rem // 60
-    return f"运行 {days}天{hours}时{minutes}分"
+    return f"运行 {days}天{hours}时{rem // 60}分"
+
+
+def format_speed(bps):
+    if bps < 1024:
+        return f"{bps:.0f} B/s"
+    for unit in ("KB/s", "MB/s", "GB/s"):
+        bps /= 1024.0
+        if bps < 1024:
+            return f"{bps:.2f} {unit}"
+    return f"{bps:.2f} TB/s"
+
+
+def format_bytes(b):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if b < 1024:
+            return f"{b:.1f} {unit}"
+        b /= 1024.0
+    return f"{b:.1f} PB"
 
 
 # ---------------------------------------------------------------
-# 主循环
+# GUI 层
 # ---------------------------------------------------------------
 
-def run(stdscr, interval):
-    curses.curs_set(0)
-    stdscr.nodelay(True)
-    stdscr.timeout(100)
+BG = "#1e1e2e"
+FG = "#cdd6f4"
+BAR_BG = "#313244"
+GREEN = "#a6e3a1"
+YELLOW = "#f9e2af"
+RED = "#f38ba8"
+BLUE = "#89b4fa"
+MAUVE = "#cba6f7"
+SUBTEXT = "#9399b2"
 
-    try:
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_GREEN, -1)
-        curses.init_pair(2, curses.COLOR_YELLOW, -1)
-        curses.init_pair(3, curses.COLOR_CYAN, -1)
-    except curses.error:
-        pass
 
-    prev_cpu_total, prev_cpu_cores = read_cpu_times()
-    prev_net = read_net()
-    prev_time = time.monotonic()
+def pct_color(pct):
+    if pct < 60:
+        return GREEN
+    if pct < 85:
+        return YELLOW
+    return RED
 
-    while True:
-        time.sleep(interval)
+
+class MonitorApp(tk.Tk):
+    def __init__(self, interval=1.0):
+        super().__init__()
+        self.title("系统监控 - sysmonitor")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.interval = max(0.2, interval) * 1000
+
+        self.bar_width = 220
+        self.bar_height = 18
+
+        base = tkfont.nametofont("TkDefaultFont")
+        base.configure(size=10)
+        self.font_big = tkfont.Font(size=11, weight="bold")
+        self.font_normal = tkfont.Font(size=10)
+        self.font_mono = tkfont.Font(family="Monospace", size=10)
+        self.font_small = tkfont.Font(family="Monospace", size=9)
+
+        container = tk.Frame(self, bg=BG, padx=16, pady=12)
+        container.pack()
+
+        # ---- 标题 ----
+        self.title_label = tk.Label(
+            container, text="", font=self.font_normal,
+            bg=BG, fg=SUBTEXT, anchor="w",
+        )
+        self.title_label.pack(fill="x", pady=(0, 10))
+
+        # ---- CPU ----
+        self.section(container, "CPU")
+        self.cpu_total_text = tk.StringVar(value="总体 --%")
+        self.cpu_total_canvas = tk.Canvas(
+            container, width=self.bar_width, height=self.bar_height,
+            bg=BG, highlightthickness=0,
+        )
+        self.cpu_total_canvas.pack(pady=(2, 8))
+
+        self.core_frame = tk.Frame(container, bg=BG)
+        self.core_frame.pack(pady=(0, 8))
+        self.core_canvases = []
+        self.core_texts = []
+
+        # ---- 内存 ----
+        self.section(container, "内存")
+        self.mem_text = tk.StringVar(value="--")
+        self.mem_canvas = tk.Canvas(
+            container, width=self.bar_width, height=self.bar_height,
+            bg=BG, highlightthickness=0,
+        )
+        self.mem_canvas.pack(pady=(2, 4))
+        self.swap_text = tk.StringVar(value="")
+        self.swap_canvas = tk.Canvas(
+            container, width=self.bar_width, height=self.bar_height,
+            bg=BG, highlightthickness=0,
+        )
+        self.swap_canvas.pack(pady=(0, 8))
+
+        # ---- 网络 ----
+        self.section(container, "网络")
+        self.net_frame = tk.Frame(container, bg=BG)
+        self.net_frame.pack(fill="x", pady=(2, 4))
+        self.net_labels = {}
+
+        # ---- 采集状态 ----
+        prev_cpu_total, prev_cpu_cores = read_cpu_times()
+        self.prev_cpu_total = prev_cpu_total
+        self.prev_cpu_cores = prev_cpu_cores
+        self.prev_net = read_net()
+        self.prev_time = time.monotonic()
+
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.after(50, self.update_loop)
+
+    def section(self, parent, name):
+        tk.Label(
+            parent, text=name, font=self.font_big,
+            bg=BG, fg=BLUE, anchor="w",
+        ).pack(fill="x")
+
+    def draw_bar(self, canvas, pct, color, width=None):
+        """在 Canvas 上绘制进度条"""
+        canvas.delete("all")
+        w = width or self.bar_width
+        h = self.bar_height
+        canvas.config(width=w)
+        canvas.create_rectangle(0, 0, w, h, fill=BAR_BG, outline=BAR_BG)
+        fill_w = int(w * max(0.0, min(1.0, pct / 100.0)))
+        if fill_w > 0:
+            canvas.create_rectangle(0, 0, fill_w, h, fill=color, outline=color)
+
+    def build_core_bars(self, count):
+        """按核心数量动态生成每核心进度条（每行 4 个）"""
+        for child in self.core_frame.winfo_children():
+            child.destroy()
+        self.core_canvases = []
+        self.core_texts = []
+        cols = 4 if count > 4 else count
+        for i in range(count):
+            r, c = divmod(i, cols)
+            cell = tk.Frame(self.core_frame, bg=BG)
+            cell.grid(row=r, column=c, padx=(0, 18), sticky="w")
+            text = tk.StringVar(value=f"核心{i:02d} --%")
+            tk.Label(
+                cell, textvariable=text, font=self.font_small,
+                bg=BG, fg=FG, anchor="w",
+            ).pack(anchor="w")
+            canvas = tk.Canvas(
+                cell, width=100, height=8,
+                bg=BG, highlightthickness=0,
+            )
+            canvas.pack(anchor="w", pady=(1, 4))
+            self.core_canvases.append(canvas)
+            self.core_texts.append(text)
+
+    def build_net_rows(self, ifaces):
+        """按网卡数量动态生成网速行"""
+        for child in self.net_frame.winfo_children():
+            child.destroy()
+        self.net_labels = {}
+        for iface in ifaces:
+            row = tk.Frame(self.net_frame, bg=BG)
+            row.pack(fill="x", pady=1)
+            name = tk.Label(
+                row, text=iface, font=self.font_mono, width=8,
+                bg=BG, fg=MAUVE, anchor="w",
+            )
+            name.pack(side="left")
+            down = tk.Label(
+                row, text="↓ --", font=self.font_mono, width=14,
+                bg=BG, fg=GREEN, anchor="w",
+            )
+            down.pack(side="left")
+            up = tk.Label(
+                row, text="↑ --", font=self.font_mono, width=14,
+                bg=BG, fg=YELLOW, anchor="w",
+            )
+            up.pack(side="left")
+            total = tk.Label(
+                row, text="", font=self.font_small,
+                bg=BG, fg=SUBTEXT, anchor="w",
+            )
+            total.pack(side="left")
+            self.net_labels[iface] = (down, up, total)
+
+    def update_loop(self):
+        if not self.winfo_exists():
+            return
 
         cur_cpu_total, cur_cpu_cores = read_cpu_times()
         cur_net = read_net()
         cur_time = time.monotonic()
-        dt = cur_time - prev_time
-        if dt <= 0:
-            continue
+        dt = cur_time - self.prev_time
 
-        snapshot = {
-            "uptime": read_uptime(),
-            "cpu_total": cpu_usage(prev_cpu_total, cur_cpu_total),
-            "cpu_cores": [cpu_usage(p, c) for p, c in zip(prev_cpu_cores, cur_cpu_cores)],
-            "mem": read_mem(),
-            "net": {},
-        }
+        if dt > 0:
+            total_pct = cpu_usage(self.prev_cpu_total, cur_cpu_total)
+            core_pcts = [cpu_usage(p, c)
+                         for p, c in zip(self.prev_cpu_cores, cur_cpu_cores)]
 
-        for iface, (rx, tx) in cur_net.items():
-            prev_rx, prev_tx = prev_net.get(iface, (rx, tx))
-            snapshot["net"][iface] = {
-                "rx_speed": max(0, rx - prev_rx) / dt,
-                "tx_speed": max(0, tx - prev_tx) / dt,
-                "rx_total": rx,
-                "tx_total": tx,
-            }
+            # 标题
+            self.title_label.config(
+                text=f"{time.strftime('%Y-%m-%d %H:%M:%S')}   {read_uptime()}"
+            )
 
-        stdscr.erase()
-        draw(stdscr, snapshot)
-        stdscr.refresh()
+            # CPU 总体
+            self.cpu_total_text.set(f"总体 {total_pct:5.1f}%")
+            self.draw_bar(self.cpu_total_canvas, total_pct, pct_color(total_pct))
 
-        # 处理按键
-        key = stdscr.getch()
-        if key in (ord("q"), ord("Q")):
-            return
-        elif key in (ord("+"), ord("=")):
-            interval = min(5.0, interval + 0.2)
-        elif key in (ord("-"), ord("_")):
-            interval = max(0.2, interval - 0.2)
+            # 每核心（数量变化时重建）
+            if len(self.core_canvases) != len(core_pcts):
+                self.build_core_bars(len(core_pcts))
+            for i, pct in enumerate(core_pcts):
+                self.core_texts[i].set(f"核心{i:02d} {pct:5.1f}%")
+                self.draw_bar(self.core_canvases[i], pct, pct_color(pct), width=100)
 
-        prev_cpu_total, prev_cpu_cores = cur_cpu_total, cur_cpu_cores
-        prev_net = cur_net
-        prev_time = cur_time
+            # 内存
+            mem = read_mem()
+            self.mem_text.set(
+                f"内存 {mem['mem_used']:.0f} / {mem['mem_total']:.0f} MB"
+                f"  ({mem['mem_pct']:.1f}%)"
+            )
+            self.draw_bar(self.mem_canvas, mem["mem_pct"], pct_color(mem["mem_pct"]))
+            if mem["swap_total"] > 0:
+                self.swap_text.set(
+                    f"Swap {mem['swap_used']:.0f} / {mem['swap_total']:.0f} MB"
+                    f"  ({mem['swap_pct']:.1f}%)"
+                )
+                self.draw_bar(self.swap_canvas, mem["swap_pct"],
+                              pct_color(mem["swap_pct"]))
+            else:
+                self.swap_text.set("（无 Swap）")
+                self.draw_bar(self.swap_canvas, 0, BAR_BG)
 
+            # 网络
+            if list(self.net_labels.keys()) != list(cur_net.keys()):
+                self.build_net_rows(list(cur_net.keys()))
+            for iface, (rx, tx) in cur_net.items():
+                prev_rx, prev_tx = self.prev_net.get(iface, (rx, tx))
+                rx_speed = max(0, rx - prev_rx) / dt
+                tx_speed = max(0, tx - prev_tx) / dt
+                down, up, total = self.net_labels[iface]
+                down.config(text=f"↓ {format_speed(rx_speed)}")
+                up.config(text=f"↑ {format_speed(tx_speed)}")
+                total.config(
+                    text=f"累计收 {format_bytes(rx)} / 发 {format_bytes(tx)}"
+                )
+
+            self.prev_cpu_total = cur_cpu_total
+            self.prev_cpu_cores = cur_cpu_cores
+            self.prev_net = cur_net
+            self.prev_time = cur_time
+
+        self.after(int(self.interval), self.update_loop)
+
+
+# ---------------------------------------------------------------
+# 入口
+# ---------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Ubuntu 终端实时监控：CPU / 内存 / 网速")
+    parser = argparse.ArgumentParser(description="Ubuntu 桌面实时监控：CPU / 内存 / 网速")
     parser.add_argument("-i", "--interval", type=float, default=1.0,
                         help="刷新间隔（秒），默认 1.0")
     args = parser.parse_args()
@@ -279,7 +374,8 @@ def main():
         sys.exit(1)
 
     try:
-        curses.wrapper(run, args.interval)
+        app = MonitorApp(interval=args.interval)
+        app.mainloop()
     except KeyboardInterrupt:
         pass
 
