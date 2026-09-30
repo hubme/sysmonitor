@@ -13,11 +13,18 @@ sysmonitor —— Ubuntu 桌面实时监控工具（GUI 版）
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import time
 import tkinter as tk
 from tkinter import font as tkfont
+
+
+def resource_path(name):
+    """兼容源码运行与 PyInstaller 打包（onefile 解压到 _MEIPASS）"""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
 
 
 # ---------------------------------------------------------------
@@ -152,6 +159,14 @@ class MonitorApp(tk.Tk):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.interval = max(1, min(30, interval)) * 1000
+
+        # 窗口图标
+        try:
+            self._icon = tk.PhotoImage(file=resource_path(
+                os.path.join("assets", "icon.png")))
+            self.iconphoto(True, self._icon)
+        except tk.TclError:
+            pass
 
         self.bar_width = 220
         self.bar_height = 18
