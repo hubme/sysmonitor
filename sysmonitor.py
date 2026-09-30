@@ -177,6 +177,30 @@ class MonitorApp(tk.Tk):
         )
         self.title_label.pack(fill="x", pady=(0, 10))
 
+        # ---- 刷新间隔 ----
+        interval_row = tk.Frame(container, bg=BG)
+        interval_row.pack(fill="x", pady=(0, 10))
+        tk.Label(
+            interval_row, text="刷新间隔", font=self.font_normal,
+            bg=BG, fg=SUBTEXT,
+        ).pack(side="left")
+        self.interval_var = tk.StringVar(value=f"{self.interval / 1000:.1f}")
+        self.interval_spin = tk.Spinbox(
+            interval_row, from_=0.2, to=5.0, increment=0.1,
+            textvariable=self.interval_var, width=5,
+            font=self.font_mono, bg=BAR_BG, fg=FG,
+            buttonbackground=BAR_BG, insertbackground=FG,
+            relief="flat", highlightthickness=1,
+            highlightbackground=BAR_BG, highlightcolor=MAUVE,
+            command=self._on_interval_change,
+        )
+        self.interval_spin.pack(side="left", padx=6)
+        tk.Label(
+            interval_row, text="秒", font=self.font_normal,
+            bg=BG, fg=SUBTEXT,
+        ).pack(side="left")
+        self.interval_spin.bind("<KeyRelease>", lambda _e: self._on_interval_change())
+
         # ---- CPU ----
         self.section(container, "CPU")
         tk.Label(
@@ -236,6 +260,15 @@ class MonitorApp(tk.Tk):
             parent, text=name, font=self.font_big,
             bg=BG, fg=BLUE, anchor="w",
         ).pack(fill="x")
+
+    def _on_interval_change(self):
+        """刷新间隔变化时实时生效（限 0.2 ~ 5.0 秒）"""
+        try:
+            val = float(self.interval_var.get())
+        except ValueError:
+            return
+        if 0.2 <= val <= 5.0:
+            self.interval = val * 1000
 
     def draw_bar(self, canvas, pct, color, width=None):
         """在 Canvas 上绘制进度条"""
