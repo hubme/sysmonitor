@@ -151,7 +151,7 @@ class MonitorApp(tk.Tk):
         self.title("系统监控 - sysmonitor")
         self.configure(bg=BG)
         self.resizable(False, False)
-        self.interval = max(0.2, interval) * 1000
+        self.interval = max(1, min(30, interval)) * 1000
 
         self.bar_width = 220
         self.bar_height = 18
@@ -177,29 +177,27 @@ class MonitorApp(tk.Tk):
         )
         self.title_label.pack(fill="x", pady=(0, 10))
 
-        # ---- 刷新间隔 ----
+        # ---- 刷新间隔（滑动选择，1-30 秒） ----
         interval_row = tk.Frame(container, bg=BG)
         interval_row.pack(anchor="e", pady=(0, 10))
         tk.Label(
             interval_row, text="刷新间隔", font=self.font_normal,
             bg=BG, fg=SUBTEXT,
         ).pack(side="left")
-        self.interval_var = tk.StringVar(value=f"{self.interval / 1000:.1f}")
-        self.interval_spin = tk.Spinbox(
-            interval_row, from_=0.2, to=5.0, increment=0.1,
-            textvariable=self.interval_var, width=5,
-            font=self.font_mono, bg=BAR_BG, fg=FG,
-            buttonbackground=BAR_BG, insertbackground=FG,
-            relief="flat", highlightthickness=1,
-            highlightbackground=BAR_BG, highlightcolor=MAUVE,
-            command=self._on_interval_change,
+        self.interval_scale = tk.Scale(
+            interval_row, from_=1, to=30, orient="horizontal",
+            length=160, showvalue=0, resolution=1,
+            bg=BG, fg=FG, troughcolor=BAR_BG,
+            highlightthickness=0, activebackground=MAUVE,
+            sliderrelief="flat", command=self._on_interval_change,
         )
-        self.interval_spin.pack(side="left", padx=6)
-        tk.Label(
-            interval_row, text="秒", font=self.font_normal,
-            bg=BG, fg=SUBTEXT,
-        ).pack(side="left")
-        self.interval_spin.bind("<KeyRelease>", lambda _e: self._on_interval_change())
+        self.interval_scale.set(max(1, min(30, round(self.interval / 1000))))
+        self.interval_scale.pack(side="left", padx=6)
+        self.interval_value = tk.Label(
+            interval_row, text="", font=self.font_mono,
+            bg=BG, fg=FG, width=6, anchor="w",
+        )
+        self.interval_value.pack(side="left")
 
         # ---- CPU ----
         self.section(container, "CPU")
@@ -261,14 +259,15 @@ class MonitorApp(tk.Tk):
             bg=BG, fg=BLUE, anchor="w",
         ).pack(fill="x")
 
-    def _on_interval_change(self):
-        """刷新间隔变化时实时生效（限 0.2 ~ 5.0 秒）"""
+    def _on_interval_change(self, _value=None):
+        """滑动条拖动时实时生效（1 ~ 30 秒）"""
         try:
-            val = float(self.interval_var.get())
-        except ValueError:
+            val = int(self.interval_scale.get())
+        except (ValueError, tk.TclError):
             return
-        if 0.2 <= val <= 5.0:
-            self.interval = val * 1000
+        val = max(1, min(30, val))
+        self.interval = val * 1000
+        self.interval_value.config(text=f"{val} 秒")
 
     def draw_bar(self, canvas, pct, color, width=None):
         """在 Canvas 上绘制进度条"""
@@ -412,7 +411,7 @@ class MonitorApp(tk.Tk):
 def main():
     parser = argparse.ArgumentParser(description="Ubuntu 桌面实时监控：CPU / 内存 / 网速")
     parser.add_argument("-i", "--interval", type=float, default=1.0,
-                        help="刷新间隔（秒），默认 1.0")
+                        help="刷新间隔（秒，1~30），默认 1.0")
     args = parser.parse_args()
 
     if not sys.platform.startswith("linux"):
