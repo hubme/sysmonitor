@@ -13,12 +13,36 @@ sysmonitor —— Ubuntu 桌面实时监控工具（GUI 版）
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
 import tkinter as tk
 from tkinter import font as tkfont
+
+CONFIG_PATH = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+    "sysmonitor", "config.json",
+)
+
+
+def load_config():
+    """读取保存的配置，返回 {} 表示无配置"""
+    try:
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(cfg):
+    try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(cfg, f)
+    except OSError:
+        pass
 
 
 def resource_path(name):
@@ -154,10 +178,14 @@ def pct_color(pct):
 
 class MonitorApp(tk.Tk):
     def __init__(self, interval=1.0):
-        super().__init__()
+        super().__init__(className="Sysmonitor")
         self.title("系统监控 - sysmonitor")
         self.configure(bg=BG)
         self.resizable(False, False)
+        # 初始间隔：优先使用上次保存的值，否则用命令行参数
+        saved = load_config().get("interval_sec")
+        if isinstance(saved, (int, float)) and 1 <= saved <= 30:
+            interval = saved
         self.interval = max(1, min(30, interval)) * 1000
 
         # 窗口图标
@@ -265,8 +293,18 @@ class MonitorApp(tk.Tk):
         self.prev_net = read_net()
         self.prev_time = time.monotonic()
 
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.protocol("WM_DELETE_WINDOW", self._quit)
         self.after(50, self.update_loop)
+
+    def _quit(self):
+        """退出前取消挂起的定时器，避免关闭时 Tcl 报错"""
+        after_id = getattr(self, "_after_id", None)
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self.destroy()
 
     def section(self, parent, name):
         tk.Label(
@@ -282,6 +320,7 @@ class MonitorApp(tk.Tk):
             return
         val = max(1, min(30, val))
         self.interval = val * 1000
+        save_config({"interval_sec": val})
         if hasattr(self, "interval_value"):
             self.interval_value.config(text=f"{val} 秒")
         # 立即生效：取消挂起的定时器，尽快按新间隔刷新

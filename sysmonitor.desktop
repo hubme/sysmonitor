@@ -10,3 +10,4 @@ Icon=/home/xpeng/0temp/sysmonitor/assets/icon.png
 Terminal=false
 Categories=System;Monitor;
 StartupNotify=true
+StartupWMClass=Sysmonitor
