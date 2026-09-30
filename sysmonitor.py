@@ -179,7 +179,7 @@ class MonitorApp(tk.Tk):
 
         # ---- 刷新间隔 ----
         interval_row = tk.Frame(container, bg=BG)
-        interval_row.pack(fill="x", pady=(0, 10))
+        interval_row.pack(anchor="e", pady=(0, 10))
         tk.Label(
             interval_row, text="刷新间隔", font=self.font_normal,
             bg=BG, fg=SUBTEXT,
@@ -211,7 +211,7 @@ class MonitorApp(tk.Tk):
             container, width=self.bar_width, height=self.bar_height,
             bg=BG, highlightthickness=0,
         )
-        self.cpu_total_canvas.pack(pady=(2, 8))
+        self.cpu_total_canvas.pack(anchor="w", pady=(2, 8))
 
         self.core_frame = tk.Frame(container, bg=BG)
         self.core_frame.pack(pady=(0, 8))
@@ -228,7 +228,7 @@ class MonitorApp(tk.Tk):
             container, width=self.bar_width, height=self.bar_height,
             bg=BG, highlightthickness=0,
         )
-        self.mem_canvas.pack(pady=(2, 4))
+        self.mem_canvas.pack(anchor="w", pady=(2, 4))
         tk.Label(
             container, textvariable=self.swap_text, font=self.font_mono,
             bg=BG, fg=FG, anchor="w",
@@ -237,7 +237,7 @@ class MonitorApp(tk.Tk):
             container, width=self.bar_width, height=self.bar_height,
             bg=BG, highlightthickness=0,
         )
-        self.swap_canvas.pack(pady=(0, 8))
+        self.swap_canvas.pack(anchor="w", pady=(0, 8))
 
         # ---- 网络 ----
         self.section(container, "网络")
