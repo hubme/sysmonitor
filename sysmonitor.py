@@ -21,9 +21,11 @@ import time
 import tkinter as tk
 from tkinter import font as tkfont
 
+# 配置文件与应用同目录（打包后为可执行文件所在目录，源码运行为脚本所在目录）
 CONFIG_PATH = os.path.join(
-    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
-    "sysmonitor", "config.json",
+    os.path.dirname(sys.executable if getattr(sys, "frozen", False)
+                    else os.path.abspath(__file__)),
+    "config.json",
 )
 
 
@@ -38,7 +40,6 @@ def load_config():
 
 def save_config(cfg):
     try:
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(cfg, f)
     except OSError:
@@ -293,10 +294,10 @@ class MonitorApp(tk.Tk):
         self.prev_net = read_net()
         self.prev_time = time.monotonic()
 
-        self.protocol("WM_DELETE_WINDOW", self._quit)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.after(50, self.update_loop)
 
-    def _quit(self):
+    def destroy(self):
         """退出前取消挂起的定时器，避免关闭时 Tcl 报错"""
         after_id = getattr(self, "_after_id", None)
         if after_id is not None:
@@ -304,7 +305,7 @@ class MonitorApp(tk.Tk):
                 self.after_cancel(after_id)
             except Exception:
                 pass
-        self.destroy()
+        super().destroy()
 
     def section(self, parent, name):
         tk.Label(
